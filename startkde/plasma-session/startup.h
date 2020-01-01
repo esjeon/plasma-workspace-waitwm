@@ -103,3 +103,16 @@ public:
 private:
 };
 
+
+class WindowManagerWaitJob: public KJob
+{
+    Q_OBJECT
+public:
+    WindowManagerWaitJob();
+    void start() override;
+public Q_SLOTS:
+    void slotOnReady(bool active);
+private:
+    bool m_enabled;
+};
+

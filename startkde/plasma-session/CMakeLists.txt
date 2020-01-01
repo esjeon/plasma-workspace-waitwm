@@ -35,6 +35,7 @@ target_link_libraries(plasma_session
     KF5::CoreAddons
     KF5::Notifications
     KF5::KIOCore
+    KF5::WindowSystem
     PW::KWorkspace
     ${PHONON_LIBRARIES}
 )

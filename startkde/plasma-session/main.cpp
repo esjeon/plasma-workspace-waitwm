@@ -19,11 +19,11 @@
 #include "startup.h"
 #include "shutdown.h"
 
-#include <QCoreApplication>
+#include <QGuiApplication>
 
 int main(int argc, char **argv)
 {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
 
     // This is needed with KJobs in a QCoreApplication as when they finish
     // the internal QEventLoopLocker expires and our app exits

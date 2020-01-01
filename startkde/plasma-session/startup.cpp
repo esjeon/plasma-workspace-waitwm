@@ -47,6 +47,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <KProcess>
 #include <KService>
 #include <KConfigGroup>
+#include <KWindowSystem>
 
 #include <phonon/audiooutput.h>
 #include <phonon/mediaobject.h>
@@ -216,8 +217,10 @@ Startup::Startup(QObject *parent):
     QStringList arguments = qApp->arguments();
     arguments.removeFirst();
     auto ksmserverJob = new StartServiceJob(QStringLiteral("ksmserver"), arguments, QStringLiteral("org.kde.ksmserver"));
+    auto wmjob = new WindowManagerWaitJob();
 
-    connect(ksmserverJob, &KJob::finished, phase0, &KJob::start);
+    connect(ksmserverJob, &KJob::finished, wmjob, &KJob::start);
+    connect(wmjob, &KJob::finished, phase0, &KJob::start);
 
     connect(phase0, &KJob::finished, phase1, &KJob::start);
 
@@ -428,5 +431,64 @@ void StartServiceJob::start()
     QProcess::startDetached(m_process, m_args);
 }
 
+
+WindowManagerWaitJob::WindowManagerWaitJob()
+{
+    m_enabled = true;
+}
+
+void WindowManagerWaitJob::start()
+{
+    // do not wait if compositor is already up
+    if (KWindowSystem::compositingActive()) {
+        qCInfo(PLASMA_SESSION) << "WindowManagerWaitJob: skipping";
+        slotOnReady(true);
+        return;
+    }
+
+    // delay to make sure WM fully initializes
+    auto timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this]() {
+        qCInfo(PLASMA_SESSION) << "WindowManagerWaitJob: timeout reached";
+        slotOnReady(true);
+    });
+
+    timer->start(3000);
+
+    // cut the delay if compositor is detected
+    connect(KWindowSystem::self(), &KWindowSystem::compositingChanged, this,
+        [this](bool active) {
+            qCInfo(PLASMA_SESSION) << "WindowManagerWaitJob: KWindoSystem triggered";
+            slotOnReady(active);
+        }
+    );
+
+    auto kwinWatcher = new QDBusServiceWatcher(
+            QStringLiteral("org.kde.KWin"),
+            QDBusConnection::sessionBus(),
+            QDBusServiceWatcher::WatchForRegistration,
+            this);
+    connect(kwinWatcher, &QDBusServiceWatcher::serviceRegistered, this, [this]() {
+        if (!m_enabled)
+            return;
+
+        qCInfo(PLASMA_SESSION) << "WindowManagerWaitJob: found KWin";
+        // KWin is ready, wait for its compositor
+        QDBusConnection::sessionBus().connect(
+                QStringLiteral("org.kde.KWin"),
+                QStringLiteral("/Compositor"),
+                QStringLiteral("org.kde.kwin.Compositing"),
+                QStringLiteral("compositingToggled"),
+                this, SLOT(slotOnReady(bool)));
+    });
+}
+
+void WindowManagerWaitJob::slotOnReady(bool active)
+{
+    if (m_enabled && active) {
+        m_enabled = false;
+        emitResult();
+    }
+}
 
 #include "startup.moc"
